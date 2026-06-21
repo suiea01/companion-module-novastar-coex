@@ -1,18 +1,16 @@
 {
-	"$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
-	"type": "connection",
 	"id": "novastar-coex",
-	"name": "NovaStar COEX",
-	"shortname": "COEX",
-	"description": "Control NovaStar COEX devices",
-	"version": "3.0.0",
+	"name": "novastar-coex",
+	"shortname": "novastar-coex",
+	"description": "Companion module for NovaStar COEX/VMP devices (MX40 Pro, MX30, CX80 Pro).",
+	"version": "0.0.0",
 	"license": "MIT",
-	"repository": "git+https://github.com/suiea01/companion-module-novastar-coex.git",
-	"bugs": "https://github.com/suiea01/companion-module-novastar-coex/issues",
+	"repository": "git+https://github.com/bitfocus/companion-module-novastar-coex.git",
+	"bugs": "https://github.com/bitfocus/companion-module-novastar-coex/issues",
 	"maintainers": [
 		{
-			"name": "Loïc Glénat",
-			"email": "loic@alblenat.fr"
+			"name": "Kris Dahl",
+			"email": "kris@weareatomic.com"
 		}
 	],
 	"runtime": {
@@ -21,8 +19,14 @@
 		"apiVersion": "0.0.0",
 		"entrypoint": "../dist/main.js"
 	},
-	"legacyIds": [],
-	"manufacturer": "NovaStar",
-	"products": ["COEX"],
-	"keywords": ["led", "video", "processor"]
+	"legacyIds": [
+		"companion-module-novastar-coex"
+	],
+	"manufacturer": "NovaStar Coex",
+	"products": [
+		"MX40 Pro",
+		"CX80 Pro",
+		"KU20"
+	],
+	"keywords": []
 }
