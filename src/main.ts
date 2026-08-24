@@ -24,6 +24,7 @@ type JsonRecord = Record<string, unknown>
 type Choice = { id: string; label: string }
 type NamedInput = { id: string; name: string }
 type NamedInputKey = 'hdmi1' | 'sdi1' | 'internal'
+const COEX_REQUEST_TIMEOUT_MS = 3000
 type PresetInfoResponse = {
 	screenPresets?: Array<{
 		screenID?: string | number
@@ -756,6 +757,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	private layerSourcesByLayer = new Map<string, string>()
 	private activePresetByScreen = new Map<string, Set<number>>()
 	private displayParamsPollTimer: ReturnType<typeof setInterval> | undefined
+	private displayParamsRefreshInProgress = false
 	private layerChoices: Choice[] = [{ id: '0', label: 'Layer 0' }]
 	private inputGroupChoices: Choice[] = [{ id: '0', label: 'Source 0' }]
 	private canvasChoices: Choice[] = [{ id: '0', label: 'Canvas 0' }]
@@ -805,7 +807,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			return
 		}
 
-		this.updateStatus(InstanceStatus.Ok)
+		this.updateStatus(InstanceStatus.Connecting, 'Connecting to COEX device')
 	}
 
 	async coexRequest<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
@@ -838,6 +840,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 				'Device-Key': deviceKey,
 			},
 			body: rawBody,
+			signal: AbortSignal.timeout(COEX_REQUEST_TIMEOUT_MS),
 		})
 
 		const responseText = await response.text().catch(() => '')
@@ -991,9 +994,12 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	async refreshDisplayParams(): Promise<void> {
-		if (!this.config.host) {
+		if (!this.config.host || this.displayParamsRefreshInProgress) {
 			return
 		}
+
+		this.displayParamsRefreshInProgress = true
+		const requestedDeviceKey = `${this.config.host}:${this.config.port}`
 
 		try {
 			const [
@@ -1015,6 +1021,32 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 				this.coexRequest<JsonRecord[]>('GET', '/api/v1/device/cabinet'),
 				this.coexRequest<unknown>('GET', '/api/v1/device/input/sources'),
 			])
+
+			if (`${this.config.host}:${this.config.port}` !== requestedDeviceKey) {
+				return
+			}
+
+			const successfulRequests = [
+				displayParamsResult,
+				screenInfoResult,
+				displayStateResult,
+				presetInfoResult,
+				deviceInfoResult,
+				monitorInfoResult,
+				cabinetInfoResult,
+				inputSourcesResult,
+			].filter((result) => result.status === 'fulfilled')
+
+			if (successfulRequests.length === 0) {
+				const firstFailure = displayParamsResult.status === 'rejected' ? String(displayParamsResult.reason) : ''
+				this.updateStatus(
+					InstanceStatus.ConnectionFailure,
+					`Unable to reach COEX device at ${requestedDeviceKey}${firstFailure ? `: ${firstFailure}` : ''}`,
+				)
+				return
+			}
+
+			this.updateStatus(InstanceStatus.Ok)
 
 			const data = displayParamsResult.status === 'fulfilled' ? displayParamsResult.value : {}
 			const rawList = normalizeDisplayParams(data)
@@ -1170,6 +1202,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			)
 		} catch (error) {
 			this.log('debug', `Failed to retrieve COEX variables: ${String(error)}`)
+		} finally {
+			this.displayParamsRefreshInProgress = false
 		}
 	}
 
