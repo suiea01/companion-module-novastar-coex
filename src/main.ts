@@ -25,6 +25,10 @@ type Choice = { id: string; label: string }
 type NamedInput = { id: string; name: string }
 type NamedInputKey = 'hdmi1' | 'sdi1' | 'internal'
 const COEX_REQUEST_TIMEOUT_MS = 3000
+const BACKUP_VERIFY_SETTLE_MS = 2000
+const BACKUP_VERIFY_MAX_ATTEMPTS = 3
+const BACKUP_VERIFY_RETRY_DELAY_MS = 1000
+const RETRYABLE_COEX_ERROR_CODES = new Set([2, 3, 5, 18, 19])
 type PresetInfoResponse = {
 	screenPresets?: Array<{
 		screenID?: string | number
@@ -42,6 +46,20 @@ type DisplayStateResponse = {
 
 type ScreenInfoResponse = {
 	screens?: JsonRecord[]
+}
+
+class CoexApiError extends Error {
+	constructor(
+		message: string,
+		readonly code: number,
+	) {
+		super(message)
+		this.name = 'CoexApiError'
+	}
+}
+
+async function delay(milliseconds: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
 function isJsonRecord(value: unknown): value is JsonRecord {
@@ -805,6 +823,8 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	private activePresetByScreen = new Map<string, Set<number>>()
 	private displayParamsPollTimer: ReturnType<typeof setInterval> | undefined
 	private displayParamsRefreshInProgress = false
+	private backupVerificationInProgress = false
+	private backupVerificationQueue: Promise<void> = Promise.resolve()
 	private screenChoices: Choice[] = [{ id: '1', label: 'Screen 1' }]
 	private layerChoices: Choice[] = [{ id: '0', label: 'Layer 0' }]
 	private inputGroupChoices: Choice[] = [{ id: '0', label: 'Source 0' }]
@@ -921,7 +941,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			const code = jsonRecord['code']
 			if (code !== 0) {
 				const message = primitiveToString(jsonRecord['message']) || `COEX API returned code ${code}`
-				throw new Error(message)
+				throw new CoexApiError(message, code)
 			}
 
 			return jsonRecord['data'] as T
@@ -1000,6 +1020,54 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		}
 	}
 
+	async setDeviceBackupVerification(screenId: string, verifyType: number): Promise<void> {
+		const operation = this.backupVerificationQueue.then(async () => {
+			await this.runDeviceBackupVerification(this.resolveScreenId(screenId), verifyType)
+		})
+		this.backupVerificationQueue = operation.catch(() => undefined)
+		return await operation
+	}
+
+	private async runDeviceBackupVerification(screenId: string, verifyType: number): Promise<void> {
+		this.backupVerificationInProgress = true
+
+		try {
+			const refreshDeadline = Date.now() + COEX_REQUEST_TIMEOUT_MS + 1000
+			while (this.displayParamsRefreshInProgress && Date.now() < refreshDeadline) {
+				await delay(50)
+			}
+
+			for (let attempt = 1; attempt <= BACKUP_VERIFY_MAX_ATTEMPTS; attempt++) {
+				try {
+					await this.coexRequest('POST', '/api/v1/device/backup/verify', {
+						screenID: screenId,
+						verifyType,
+					})
+					this.log(
+						'debug',
+						`Backup verification accepted for screen ${screenId}, type ${verifyType}, attempt ${attempt}`,
+					)
+					await delay(BACKUP_VERIFY_SETTLE_MS)
+					return
+				} catch (error) {
+					const retryable =
+						(error instanceof CoexApiError && RETRYABLE_COEX_ERROR_CODES.has(error.code)) || error instanceof TypeError
+					if (!retryable || attempt === BACKUP_VERIFY_MAX_ATTEMPTS) {
+						throw error
+					}
+
+					this.log(
+						'warn',
+						`Backup verification attempt ${attempt} failed for screen ${screenId}: ${String(error)}. Retrying.`,
+					)
+					await delay(BACKUP_VERIFY_RETRY_DELAY_MS)
+				}
+			}
+		} finally {
+			this.backupVerificationInProgress = false
+		}
+	}
+
 	resolveScreenId(screenId: string): string {
 		const trimmedScreenId = screenId.trim()
 		const exactMatch = this.displayParamsByScreen.get(trimmedScreenId)
@@ -1074,7 +1142,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	async refreshDisplayParams(): Promise<void> {
-		if (!this.config.host || this.displayParamsRefreshInProgress) {
+		if (!this.config.host || this.displayParamsRefreshInProgress || this.backupVerificationInProgress) {
 			return
 		}
 

@@ -15,6 +15,7 @@ It also includes compatibility routes for older COEX hardware/API versions repor
 - Canvas mapping toggle with feedback
 - COEX preset recall with active-state feedback
 - Primary/backup verification (off, primary, or backup)
+- Serialized backup verification with settling time and automatic retries for transient COEX busy/timeout responses
 - Device identification
 - Sending card test patterns
 - Dynamic source and layer dropdowns based on values reported by the processor

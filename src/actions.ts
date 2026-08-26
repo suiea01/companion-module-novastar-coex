@@ -566,11 +566,7 @@ export function UpdateActions(self: ModuleInstance): void {
 				},
 			],
 			callback: async (event) => {
-				await self.coexRequest('POST', '/api/v1/device/backup/verify', {
-					screenID: self.resolveScreenId(event.options.screenId),
-					verifyType: event.options.verifyType,
-				})
-				await self.refreshDisplayParams()
+				await self.setDeviceBackupVerification(event.options.screenId, event.options.verifyType)
 			},
 		},
 		device_identify: {

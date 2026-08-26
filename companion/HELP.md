@@ -30,7 +30,7 @@ The module reads every screen reported by the processor. Screen-based actions pr
 - **Switch Source for Layer**: switch a layer to an input source. Layer and source menus are built from the values reported by the processor.
 - **Enable Canvas Mapping**: turn canvas mapping on, off, or toggle it. This controls the mapping state used by the module feedback.
 - **Apply Preset**: recall a COEX preset by sequence number.
-- **Set Device Backup Verification**: turn backup verification off, verify the primary device, or verify the backup device.
+- **Set Device Backup Verification**: turn backup verification off, verify the primary device, or verify the backup device. Commands are serialized, transient COEX busy/timeout errors are retried, and a two-second settling period is applied between transitions.
 - **Device Identify**: enable or disable device identification.
 - **Set Sending Card Test Pattern**: set an internal sending card test pattern. The action exposes mode, RGB/gray values, grid width, move speed, gradient stretch, and state.
 
@@ -170,4 +170,5 @@ COEX 1.5.1 reports input link state and status for tested devices. Resolution, f
 - In All-in-One mode, the module ignores the non-layer `1` entry and uses the actual layer IDs reported by COEX.
 - For COEX hardware/API versions below `1.4.0`, some commands do not use screen UUIDs. The module detects this from `$(COEX:device_hw_version)` and switches those commands to the older `/api/v1/device/...` routes.
 - Some COEX API calls can return success while the visible effect depends on the processor working mode or current VMP/device state.
+- Primary/backup verification requires VMP to release the device. Rapid Verify commands are queued by the module and may therefore take a few seconds to execute in order.
 - Sending card test patterns use `/api/v1/device/input/pattern/test` on current firmware and `/api/v1/device/screen/controller/pattern/test` on legacy firmware. Full color presets use 12-bit style values (`4095`) based on NovaStar COEX examples.
