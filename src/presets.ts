@@ -424,7 +424,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			feedbacks: [
 				{
 					feedbackId: 'display_mode_is',
-					options: { mode: 1 },
+					options: { screenId: SCREEN_ID, mode: 1 },
 					style: { bgcolor: RED, color: WHITE },
 				},
 			],
@@ -446,7 +446,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			feedbacks: [
 				{
 					feedbackId: 'display_mode_is',
-					options: { mode: 2 },
+					options: { screenId: SCREEN_ID, mode: 2 },
 					style: { bgcolor: RED, color: WHITE },
 				},
 			],
@@ -465,7 +465,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			feedbacks: [
 				{
 					feedbackId: 'display_mode_is',
-					options: { mode: 0 },
+					options: { screenId: SCREEN_ID, mode: 0 },
 					style: { bgcolor: GREEN, color: WHITE },
 				},
 			],
@@ -487,7 +487,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			feedbacks: [
 				{
 					feedbackId: 'mapping_is_enabled',
-					options: {},
+					options: { screenId: SCREEN_ID },
 					style: { bgcolor: AMBER, color: BLACK },
 				},
 			],
@@ -796,6 +796,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 					{
 						feedbackId: 'layer_source_is',
 						options: {
+							screenId: SCREEN_ID,
 							layerId: self.getLayerPresetId(layerNumber as 1 | 2 | 3),
 							sourceId: source.groupId,
 						},
@@ -825,6 +826,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 				{
 					feedbackId: 'layer_source_is',
 					options: {
+						screenId: SCREEN_ID,
 						layerId: self.getSenderOnlyLayerPresetId(),
 						sourceId: source.groupId,
 					},

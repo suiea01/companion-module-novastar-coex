@@ -14,6 +14,17 @@ function parseNumberOption(value: string, label: string, min: number, max: numbe
 	return parsed
 }
 
+function screenIdOption(self: ModuleInstance) {
+	return {
+		id: 'screenId' as const,
+		type: 'dropdown' as const,
+		label: 'Screen',
+		default: self.getScreenChoices()[0]?.id || '1',
+		choices: self.getScreenChoices(),
+		allowCustom: true,
+	}
+}
+
 export type FeedbacksSchema = {
 	brightness_matches: {
 		type: 'boolean'
@@ -26,6 +37,7 @@ export type FeedbacksSchema = {
 	display_mode_is: {
 		type: 'boolean'
 		options: {
+			screenId: string
 			mode: number
 		}
 	}
@@ -38,11 +50,14 @@ export type FeedbacksSchema = {
 	}
 	mapping_is_enabled: {
 		type: 'boolean'
-		options: Record<string, never>
+		options: {
+			screenId: string
+		}
 	}
 	layer_source_is: {
 		type: 'boolean'
 		options: {
+			screenId: string
 			layerId: string
 			sourceId: string
 		}
@@ -59,13 +74,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 				color: 0x000000,
 			},
 			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
+				screenIdOption(self),
 				{
 					id: 'brightness',
 					type: 'textinput',
@@ -84,7 +93,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 				},
 			],
 			callback: (feedback) => {
-				const currentBrightness = self.getBrightness(feedback.options.screenId)
+				const currentBrightness = self.getBrightness(feedback.options.screenId || '1')
 
 				if (currentBrightness === undefined) {
 					return false
@@ -102,6 +111,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 				color: 0xffffff,
 			},
 			options: [
+				screenIdOption(self),
 				{
 					id: 'mode',
 					type: 'dropdown',
@@ -115,7 +125,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 				},
 			],
 			callback: (feedback) => {
-				return self.getDisplayMode() === feedback.options.mode
+				return self.getDisplayMode(feedback.options.screenId || '1') === feedback.options.mode
 			},
 		},
 		preset_is_active: {
@@ -126,13 +136,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 				color: 0xffffff,
 			},
 			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
+				screenIdOption(self),
 				{
 					id: 'sequenceNumber',
 					type: 'number',
@@ -144,7 +148,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 				},
 			],
 			callback: (feedback) => {
-				return self.isPresetActive(feedback.options.screenId, feedback.options.sequenceNumber)
+				return self.isPresetActive(feedback.options.screenId || '1', feedback.options.sequenceNumber)
 			},
 		},
 		mapping_is_enabled: {
@@ -154,9 +158,9 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 				bgcolor: 0xffaa00,
 				color: 0x000000,
 			},
-			options: [],
-			callback: () => {
-				return self.getMappingEnabled() === true
+			options: [screenIdOption(self)],
+			callback: (feedback) => {
+				return self.getMappingEnabled(feedback.options.screenId || '1') === true
 			},
 		},
 		layer_source_is: {
@@ -167,6 +171,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 				color: 0x000000,
 			},
 			options: [
+				screenIdOption(self),
 				{
 					id: 'layerId',
 					type: 'dropdown',
@@ -185,7 +190,11 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 				},
 			],
 			callback: (feedback) => {
-				return self.isLayerSourceActive(feedback.options.layerId, feedback.options.sourceId)
+				return self.isLayerSourceActive(
+					feedback.options.screenId || '1',
+					feedback.options.layerId,
+					feedback.options.sourceId,
+				)
 			},
 		},
 	})

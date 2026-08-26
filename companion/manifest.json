@@ -5,7 +5,7 @@
 	"name": "NovaStar COEX",
 	"shortname": "COEX",
 	"description": "Control NovaStar COEX devices",
-	"version": "3.0.1",
+	"version": "3.0.5",
 	"license": "MIT",
 	"repository": "git+https://github.com/suiea01/companion-module-novastar-coex.git",
 	"bugs": "https://github.com/suiea01/companion-module-novastar-coex/issues",

@@ -13,7 +13,7 @@ preset recall, and sending card test pattern actions use the older device-level 
 - **Device IP**: IP address of the COEX processor
 - **Device Port**: COEX API port, default `8001`
 
-The module automatically reads the first available screen from the processor. In most setups, leaving action screen fields at `1` is correct; the module resolves this internally to the real COEX screen UUID.
+The module reads every screen reported by the processor. Screen-based actions provide a dropdown containing each screen name and its real COEX ID. Existing actions using `1`, `2`, and so on remain compatible and are resolved by screen order.
 
 ### Actions
 
@@ -30,16 +30,19 @@ The module automatically reads the first available screen from the processor. In
 - **Switch Source for Layer**: switch a layer to an input source. Layer and source menus are built from the values reported by the processor.
 - **Enable Canvas Mapping**: turn canvas mapping on, off, or toggle it. This controls the mapping state used by the module feedback.
 - **Apply Preset**: recall a COEX preset by sequence number.
+- **Set Device Backup Verification**: turn backup verification off, verify the primary device, or verify the backup device.
 - **Device Identify**: enable or disable device identification.
 - **Set Sending Card Test Pattern**: set an internal sending card test pattern. The action exposes mode, RGB/gray values, grid width, move speed, gradient stretch, and state.
 
 ### Feedbacks
 
-- **Brightness Matches Value**: active when the current brightness matches the configured value, with optional tolerance.
-- **Display Mode Is**: active when the display mode is Normal, Blackout, or Freeze.
-- **Preset Is Active**: active when the selected COEX preset reports as active.
-- **Cabinet Mapping Is Enabled**: active when canvas mapping is enabled.
-- **Layer Source Is**: active when a selected layer is using a selected source.
+- **Brightness Matches Value**: active when the selected screen brightness matches the configured value, with optional tolerance.
+- **Display Mode Is**: active when the selected screen display mode is Normal, Blackout, or Freeze.
+- **Preset Is Active**: active when the selected COEX screen preset reports as active.
+- **Cabinet Mapping Is Enabled**: active when canvas mapping is enabled for the selected screen.
+- **Layer Source Is**: active when a layer on the selected screen is using the selected source.
+
+Every screen-based feedback provides the same dynamic screen dropdown as the actions.
 
 ### Presets
 
@@ -65,12 +68,32 @@ Source presets are generated from the input groups reported by the processor, so
 - `$(COEX:gamma)`
 - `$(COEX:screen_id)`
 - `$(COEX:screen_name)`
+- `$(COEX:all_screen_ids)`
 - `$(COEX:screen_working_mode)`
 - `$(COEX:screen_master_frame_rate)`
 - `$(COEX:display_mode)`
 - `$(COEX:is_blackout)`
 - `$(COEX:is_freeze)`
 - `$(COEX:mapping_enabled)`
+
+The variables above remain aliases for the first screen for compatibility.
+
+#### Per-screen dynamic variables
+
+For every screen reported by the processor, the module creates variables using its position in the COEX screen list. For example, the second screen exposes:
+
+- `$(COEX:screen_2_id)`
+- `$(COEX:screen_2_name)`
+- `$(COEX:screen_2_brightness)`
+- `$(COEX:screen_2_gamma)`
+- `$(COEX:screen_2_color_temperature)`
+- `$(COEX:screen_2_display_mode)`
+- `$(COEX:screen_2_is_blackout)`
+- `$(COEX:screen_2_is_freeze)`
+- `$(COEX:screen_2_mapping_enabled)`
+- `$(COEX:screen_2_working_mode)`
+
+The same set is generated for `screen_1`, `screen_3`, and every other screen returned by the device.
 
 #### Layers, canvases, and sources
 

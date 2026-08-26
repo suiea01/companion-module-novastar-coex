@@ -1,6 +1,7 @@
+import type { CompanionVariableDefinitions } from '@companion-module/base'
 import type ModuleInstance from './main.js'
 
-export type VariablesSchema = {
+type StaticVariablesSchema = {
 	brightness: number
 	color_temperature: number
 	gamma: number
@@ -49,6 +50,7 @@ export type VariablesSchema = {
 	input_status_count: number
 	output_status_count: number
 	all_screen_names: string
+	all_screen_ids: string
 	all_input_group_ids: string
 	all_input_groups: string
 	input_hdmi_1_group_id: string
@@ -112,8 +114,29 @@ export type VariablesSchema = {
 	last_command_response: string
 }
 
-export function UpdateVariableDefinitions(self: ModuleInstance): void {
-	self.setVariableDefinitions({
+type PerScreenVariableSuffix =
+	| 'id'
+	| 'name'
+	| 'brightness'
+	| 'gamma'
+	| 'color_temperature'
+	| 'display_mode'
+	| 'is_blackout'
+	| 'is_freeze'
+	| 'mapping_enabled'
+	| 'working_mode'
+
+type PerScreenVariableId = `screen_${number}_${PerScreenVariableSuffix}`
+
+export type VariablesSchema = StaticVariablesSchema & Record<PerScreenVariableId, string | number | boolean>
+
+type ScreenVariableChoice = {
+	id: string
+	label: string
+}
+
+export function UpdateVariableDefinitions(self: ModuleInstance, screens: ScreenVariableChoice[] = []): void {
+	const definitions: CompanionVariableDefinitions<VariablesSchema> = {
 		brightness: { name: 'Screen brightness' },
 		color_temperature: { name: 'Screen color temperature' },
 		gamma: { name: 'Screen gamma' },
@@ -162,6 +185,7 @@ export function UpdateVariableDefinitions(self: ModuleInstance): void {
 		input_status_count: { name: 'Input status count' },
 		output_status_count: { name: 'Output status count' },
 		all_screen_names: { name: 'All screen names' },
+		all_screen_ids: { name: 'All screen IDs' },
 		all_input_group_ids: { name: 'All input group IDs' },
 		all_input_groups: { name: 'All input groups' },
 		input_hdmi_1_group_id: { name: 'HDMI 1 input group ID' },
@@ -223,5 +247,23 @@ export function UpdateVariableDefinitions(self: ModuleInstance): void {
 		input_sources_json: { name: 'Raw input sources JSON' },
 		input_status_json: { name: 'Raw input status JSON' },
 		last_command_response: { name: 'Last COEX command response' },
-	})
+	}
+
+	for (const [index, screen] of screens.entries()) {
+		const screenNumber = index + 1
+		const prefix = `screen_${screenNumber}` as const
+		const label = `Screen ${screenNumber}: ${screen.label}`
+		definitions[`${prefix}_id`] = { name: `${label} ID` }
+		definitions[`${prefix}_name`] = { name: `${label} name` }
+		definitions[`${prefix}_brightness`] = { name: `${label} brightness` }
+		definitions[`${prefix}_gamma`] = { name: `${label} gamma` }
+		definitions[`${prefix}_color_temperature`] = { name: `${label} color temperature` }
+		definitions[`${prefix}_display_mode`] = { name: `${label} display mode` }
+		definitions[`${prefix}_is_blackout`] = { name: `${label} blackout enabled` }
+		definitions[`${prefix}_is_freeze`] = { name: `${label} freeze enabled` }
+		definitions[`${prefix}_mapping_enabled`] = { name: `${label} mapping enabled` }
+		definitions[`${prefix}_working_mode`] = { name: `${label} working mode` }
+	}
+
+	self.setVariableDefinitions(definitions)
 }

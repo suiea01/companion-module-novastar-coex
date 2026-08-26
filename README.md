@@ -14,9 +14,11 @@ It also includes compatibility routes for older COEX hardware/API versions repor
 - Source switching by COEX layer and input `groupID`
 - Canvas mapping toggle with feedback
 - COEX preset recall with active-state feedback
+- Primary/backup verification (off, primary, or backup)
 - Device identification
 - Sending card test patterns
 - Dynamic source and layer dropdowns based on values reported by the processor
+- Dynamic screen dropdowns for multi-screen processors such as the MX6000
 - Ready-to-use Companion presets for common controls
 - Device, screen, source, layer, and monitoring variables
 
@@ -27,7 +29,7 @@ The module requires:
 - **Device IP**
 - **Device Port**, default `8001`
 
-The module automatically reads the first screen reported by the processor. Action fields using `Screen ID` can usually be left at the default value `1`; the module resolves it internally to the real COEX screen UUID.
+The module reads every screen reported by the processor. Screen-based actions provide a dropdown containing each screen name and its real COEX ID. Existing actions using `1`, `2`, and so on remain compatible and are resolved by screen order.
 
 ## Tested Hardware / Firmware
 
@@ -52,22 +54,24 @@ Actions include:
 - Switch source for layer
 - Enable canvas mapping
 - Apply preset
+- Set device backup verification
 - Device identify
 - Set sending card test pattern
 
 Feedbacks include:
 
-- Brightness matches value
-- Display mode is active
-- Preset is active
-- Canvas mapping is enabled
-- Layer source is active
+- Per-screen brightness matches value
+- Per-screen display mode is active
+- Per-screen preset is active
+- Per-screen canvas mapping is enabled
+- Per-screen layer source is active
 
 ## Variables
 
 The module exposes variables for:
 
 - Screen state: brightness, gamma, color temperature, display mode, working mode
+- Dynamic per-screen variables such as `screen_1_brightness`, `screen_2_brightness`, and matching gamma, color temperature, display mode, mapping, ID, and name values
 - Layers and sources: layer IDs, current layer sources, input groups
 - Input status: link status, port ID, status values
 - Device info: name, custom name, IP, MAC, serial number, hardware/software versions

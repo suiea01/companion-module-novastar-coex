@@ -79,6 +79,17 @@ function parseIntegerListOption(value: string, label: string): number[] {
 	return parseIntegerStringListOption(value, label).map(Number)
 }
 
+function screenIdOption(self: ModuleInstance) {
+	return {
+		id: 'screenId' as const,
+		type: 'dropdown' as const,
+		label: 'Screen',
+		default: self.getScreenChoices()[0]?.id || '1',
+		choices: self.getScreenChoices(),
+		allowCustom: true,
+	}
+}
+
 async function setDisplayMode(self: ModuleInstance, screenId: string, mode: number): Promise<void> {
 	if (self.usesLegacyDeviceApi()) {
 		await self.coexRequest('PUT', '/api/v1/device/screen/displaymode', {
@@ -95,11 +106,16 @@ async function setDisplayMode(self: ModuleInstance, screenId: string, mode: numb
 	await self.refreshDisplayParams()
 }
 
-function resolveDisplayToggleMode(self: ModuleInstance, targetMode: number, toggleMode: ToggleMode): number {
+function resolveDisplayToggleMode(
+	self: ModuleInstance,
+	screenId: string,
+	targetMode: number,
+	toggleMode: ToggleMode,
+): number {
 	if (toggleMode === 'on') return targetMode
 	if (toggleMode === 'off') return 0
 
-	return self.getDisplayMode() === targetMode ? 0 : targetMode
+	return self.getDisplayMode(screenId) === targetMode ? 0 : targetMode
 }
 
 function resolveMappingToggleMode(self: ModuleInstance, toggleMode: ToggleMode): boolean {
@@ -212,6 +228,12 @@ export type ActionsSchema = {
 			sequenceNumber: number
 		}
 	}
+	set_device_backup_verification: {
+		options: {
+			screenId: string
+			verifyType: number
+		}
+	}
 	device_identify: {
 		options: {
 			enable: boolean
@@ -237,13 +259,7 @@ export function UpdateActions(self: ModuleInstance): void {
 		set_screen_brightness: {
 			name: 'Set Screen Brightness',
 			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
+				screenIdOption(self),
 				{
 					id: 'brightness',
 					type: 'textinput',
@@ -260,13 +276,7 @@ export function UpdateActions(self: ModuleInstance): void {
 		adjust_screen_brightness: {
 			name: 'Adjust Screen Brightness',
 			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
+				screenIdOption(self),
 				{
 					id: 'step',
 					type: 'number',
@@ -285,13 +295,7 @@ export function UpdateActions(self: ModuleInstance): void {
 		set_screen_gamma: {
 			name: 'Set Screen Gamma',
 			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
+				screenIdOption(self),
 				{
 					id: 'gamma',
 					type: 'textinput',
@@ -308,13 +312,7 @@ export function UpdateActions(self: ModuleInstance): void {
 		adjust_screen_gamma: {
 			name: 'Adjust Screen Gamma',
 			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
+				screenIdOption(self),
 				{
 					id: 'step',
 					type: 'number',
@@ -333,13 +331,7 @@ export function UpdateActions(self: ModuleInstance): void {
 		set_screen_color_temperature: {
 			name: 'Set Screen Color Temperature',
 			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
+				screenIdOption(self),
 				{
 					id: 'colorTemperature',
 					type: 'textinput',
@@ -356,13 +348,7 @@ export function UpdateActions(self: ModuleInstance): void {
 		adjust_screen_color_temperature: {
 			name: 'Adjust Screen Color Temperature',
 			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
+				screenIdOption(self),
 				{
 					id: 'step',
 					type: 'number',
@@ -381,13 +367,7 @@ export function UpdateActions(self: ModuleInstance): void {
 		set_display_mode: {
 			name: 'Set Screen Display Mode',
 			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
+				screenIdOption(self),
 				{
 					id: 'mode',
 					type: 'dropdown',
@@ -406,15 +386,7 @@ export function UpdateActions(self: ModuleInstance): void {
 		},
 		set_screen_normal: {
 			name: 'Set Screen Normal',
-			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
-			],
+			options: [screenIdOption(self)],
 			callback: async (event) => {
 				await setDisplayMode(self, event.options.screenId, 0)
 			},
@@ -422,13 +394,7 @@ export function UpdateActions(self: ModuleInstance): void {
 		set_screen_blackout: {
 			name: 'Blackout Screen',
 			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
+				screenIdOption(self),
 				{
 					id: 'control',
 					type: 'dropdown',
@@ -442,19 +408,17 @@ export function UpdateActions(self: ModuleInstance): void {
 				},
 			],
 			callback: async (event) => {
-				await setDisplayMode(self, event.options.screenId, resolveDisplayToggleMode(self, 1, event.options.control))
+				await setDisplayMode(
+					self,
+					event.options.screenId,
+					resolveDisplayToggleMode(self, event.options.screenId, 1, event.options.control),
+				)
 			},
 		},
 		set_screen_freeze: {
 			name: 'Freeze Screen',
 			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
+				screenIdOption(self),
 				{
 					id: 'control',
 					type: 'dropdown',
@@ -468,19 +432,17 @@ export function UpdateActions(self: ModuleInstance): void {
 				},
 			],
 			callback: async (event) => {
-				await setDisplayMode(self, event.options.screenId, resolveDisplayToggleMode(self, 2, event.options.control))
+				await setDisplayMode(
+					self,
+					event.options.screenId,
+					resolveDisplayToggleMode(self, event.options.screenId, 2, event.options.control),
+				)
 			},
 		},
 		switch_layer_source: {
 			name: 'Switch Source for Layer',
 			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
+				screenIdOption(self),
 				{
 					id: 'layerId',
 					type: 'dropdown',
@@ -560,13 +522,7 @@ export function UpdateActions(self: ModuleInstance): void {
 		apply_preset: {
 			name: 'Apply Preset',
 			options: [
-				{
-					id: 'screenId',
-					type: 'textinput',
-					label: 'Screen ID',
-					default: '1',
-					useVariables: true,
-				},
+				screenIdOption(self),
 				{
 					id: 'sequenceNumber',
 					type: 'number',
@@ -589,6 +545,30 @@ export function UpdateActions(self: ModuleInstance): void {
 				await self.coexRequest('POST', '/api/v1/preset/current/update', {
 					screenID: self.resolveScreenId(event.options.screenId),
 					sequenceNumber: event.options.sequenceNumber,
+				})
+				await self.refreshDisplayParams()
+			},
+		},
+		set_device_backup_verification: {
+			name: 'Set Device Backup Verification',
+			options: [
+				screenIdOption(self),
+				{
+					id: 'verifyType',
+					type: 'dropdown',
+					label: 'Verification',
+					default: 0,
+					choices: [
+						{ id: 0, label: 'Off' },
+						{ id: 1, label: 'Verify Primary' },
+						{ id: 2, label: 'Verify Backup' },
+					],
+				},
+			],
+			callback: async (event) => {
+				await self.coexRequest('POST', '/api/v1/device/backup/verify', {
+					screenID: self.resolveScreenId(event.options.screenId),
+					verifyType: event.options.verifyType,
 				})
 				await self.refreshDisplayParams()
 			},

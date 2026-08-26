@@ -36,8 +36,8 @@ type PresetInfoResponse = {
 	}>
 }
 type DisplayStateResponse = {
-	mappingState?: Array<{ canvasID?: string | number; enable?: boolean }>
-	displayState?: Array<{ canvasID?: string | number; displayMode?: number }>
+	mappingState?: JsonRecord[]
+	displayState?: JsonRecord[]
 }
 
 type ScreenInfoResponse = {
@@ -204,6 +204,40 @@ function findScreen(screens: JsonRecord[], screenId: string): JsonRecord | undef
 	return screens.find((screen) => getString(screen, 'screenID') === screenId) || screens[0]
 }
 
+function findStateRecordsForScreen(
+	states: JsonRecord[],
+	screen: JsonRecord,
+	screenIndex: number,
+	screenCount: number,
+): JsonRecord[] {
+	const screenId = getString(screen, 'screenID')
+	const directMatches = states.filter(
+		(state) => getFirstString(state, ['screenID', 'screenId', 'screen_id']) === screenId,
+	)
+	if (directMatches.length > 0) {
+		return directMatches
+	}
+
+	const canvasIds = new Set(
+		asRecordArray(screen.canvases)
+			.map(findCanvasId)
+			.filter((id) => id !== undefined),
+	)
+	const canvasMatches = states.filter((state) => {
+		const canvasId = getFirstString(state, ['canvasID', 'canvasId', 'canvas_id'])
+		return canvasId !== undefined && canvasIds.has(canvasId)
+	})
+	if (canvasMatches.length > 0) {
+		return canvasMatches
+	}
+
+	if (states.length === screenCount && states[screenIndex]) {
+		return [states[screenIndex]]
+	}
+
+	return screenCount === 1 ? states : []
+}
+
 function countLayers(screen: JsonRecord | undefined): number {
 	return asRecordArray(screen?.layersInWorkingMode).reduce((count, layerGroup) => {
 		return count + asRecordArray(layerGroup.layers).length
@@ -283,9 +317,7 @@ function buildCanvasChoices(
 ): Choice[] {
 	const canvasIds = [
 		...asRecordArray(selectedScreen?.canvases).map((canvas) => findCanvasId(canvas)),
-		...(displayState?.mappingState || []).map((state) =>
-			state.canvasID === undefined ? undefined : state.canvasID.toString(),
-		),
+		...(displayState?.mappingState || []).map((state) => getFirstString(state, ['canvasID', 'canvasId', 'canvas_id'])),
 	].filter((id): id is string => id !== undefined)
 
 	const uniqueCanvasIds = [...new Set(canvasIds)]
@@ -628,11 +660,16 @@ function summarizeCommandResponse(
 	return `${method} ${path}${bodyText} =>${statusText} ${responseText}`
 }
 
-function buildActivePresetMap(presetInfo: PresetInfoResponse | undefined): Map<string, Set<number>> {
+function buildActivePresetMap(
+	presetInfo: PresetInfoResponse | undefined,
+	screenChoices: Choice[],
+): Map<string, Set<number>> {
 	const result = new Map<string, Set<number>>()
 
-	for (const screenPreset of presetInfo?.screenPresets || []) {
-		const screenId = screenPreset.screenID === undefined ? '' : String(screenPreset.screenID)
+	for (const [index, screenPreset] of (presetInfo?.screenPresets || []).entries()) {
+		const rawScreenId = screenPreset.screenID === undefined ? '' : String(screenPreset.screenID)
+		const screenId =
+			screenChoices.find((choice) => choice.id === rawScreenId)?.id || screenChoices[index]?.id || rawScreenId
 		const activePresets = new Set<number>()
 
 		for (const preset of screenPreset.presets || []) {
@@ -737,6 +774,14 @@ function normalizeDisplayParams(data: unknown): ScreenDisplayParam[] {
 	return result
 }
 
+function buildScreenChoices(screens: JsonRecord[]): Choice[] {
+	return screens.map((screen, index) => {
+		const id = getString(screen, 'screenID') || String(index + 1)
+		const name = getString(screen, 'screenName') || `Screen ${index + 1}`
+		return { id, label: `${name} (${id})` }
+	})
+}
+
 export type ModuleSchema = {
 	config: ModuleConfig
 	secrets: undefined
@@ -754,10 +799,13 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	private mappingEnabled: boolean | undefined
 	private screenWorkingMode: number | undefined
 	private deviceHardwareVersion: string | undefined
-	private layerSourcesByLayer = new Map<string, string>()
+	private displayModeByScreen = new Map<string, number>()
+	private mappingEnabledByScreen = new Map<string, boolean>()
+	private layerSourcesByScreen = new Map<string, Map<string, string>>()
 	private activePresetByScreen = new Map<string, Set<number>>()
 	private displayParamsPollTimer: ReturnType<typeof setInterval> | undefined
 	private displayParamsRefreshInProgress = false
+	private screenChoices: Choice[] = [{ id: '1', label: 'Screen 1' }]
 	private layerChoices: Choice[] = [{ id: '0', label: 'Layer 0' }]
 	private inputGroupChoices: Choice[] = [{ id: '0', label: 'Source 0' }]
 	private canvasChoices: Choice[] = [{ id: '0', label: 'Canvas 0' }]
@@ -894,12 +942,12 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		return this.getDisplayParam(screenId)?.colorTemperature
 	}
 
-	getDisplayMode(): number | undefined {
-		return this.displayMode
+	getDisplayMode(screenId = '1'): number | undefined {
+		return this.getScreenValue(this.displayModeByScreen, screenId)
 	}
 
-	getMappingEnabled(): boolean | undefined {
-		return this.mappingEnabled
+	getMappingEnabled(screenId = '1'): boolean | undefined {
+		return this.getScreenValue(this.mappingEnabledByScreen, screenId)
 	}
 
 	getScreenWorkingMode(): number | undefined {
@@ -915,12 +963,17 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		return this.layerChoices
 	}
 
+	getScreenChoices(): Choice[] {
+		return this.screenChoices
+	}
+
 	getInputGroupChoices(): Choice[] {
 		return this.inputGroupChoices
 	}
 
-	isLayerSourceActive(layerId: string, sourceId: string): boolean {
-		return this.layerSourcesByLayer.get(layerId.trim()) === sourceId.trim()
+	isLayerSourceActive(screenId: string, layerId: string, sourceId: string): boolean {
+		const sources = this.getScreenValue(this.layerSourcesByScreen, screenId)
+		return sources?.get(layerId.trim()) === sourceId.trim()
 	}
 
 	getCanvasChoices(): Choice[] {
@@ -954,36 +1007,63 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			return exactMatch.screenId.toString()
 		}
 
-		if (trimmedScreenId === '' || trimmedScreenId === '1') {
-			// The UI defaults to "1"; COEX commands need the real screen UUID when available.
-			return this.getDisplayParam('')?.screenId?.toString() || trimmedScreenId || '1'
+		const exactChoice = this.screenChoices.find((choice) => choice.id === trimmedScreenId)
+		if (exactChoice) {
+			return exactChoice.id
 		}
 
-		return trimmedScreenId
+		// Keep old actions and presets compatible: 1, 2, ... select screens by their order.
+		const screenNumber = Number(trimmedScreenId)
+		if (Number.isInteger(screenNumber) && screenNumber > 0) {
+			const choiceByPosition = this.screenChoices[screenNumber - 1]
+			if (choiceByPosition) {
+				return choiceByPosition.id
+			}
+		}
+
+		return trimmedScreenId || this.screenChoices[0]?.id || '1'
 	}
 
 	isPresetActive(screenId: string, sequenceNumber: number): boolean {
-		const activePresets = this.activePresetByScreen.get(screenId) || this.activePresetByScreen.values().next().value
+		const activePresets =
+			this.activePresetByScreen.get(this.resolveScreenId(screenId)) || this.activePresetByScreen.values().next().value
 		return activePresets?.has(sequenceNumber) || false
 	}
 
-	private updateActionChoices(layerChoices: Choice[], inputGroupChoices: Choice[], canvasChoices: Choice[]): void {
-		const signature = JSON.stringify({ layerChoices, inputGroupChoices, canvasChoices })
+	private updateActionChoices(
+		screenChoices: Choice[],
+		layerChoices: Choice[],
+		inputGroupChoices: Choice[],
+		canvasChoices: Choice[],
+	): void {
+		const signature = JSON.stringify({ screenChoices, layerChoices, inputGroupChoices, canvasChoices })
 		if (signature === this.actionChoicesSignature) {
 			return
 		}
 
+		this.screenChoices = screenChoices.length > 0 ? screenChoices : [{ id: '1', label: 'Screen 1' }]
 		this.layerChoices = layerChoices
 		this.inputGroupChoices = inputGroupChoices
 		this.canvasChoices = canvasChoices.length > 0 ? canvasChoices : [{ id: '0', label: 'Canvas 0' }]
 		this.actionChoicesSignature = signature
 		this.updateActions()
+		this.updateFeedbacks()
 		this.updatePresets()
+		this.updateVariableDefinitions()
+	}
+
+	private getScreenValue<T>(values: Map<string, T>, screenId: string): T | undefined {
+		const exactValue = values.get(this.resolveScreenId(screenId))
+		if (exactValue !== undefined) {
+			return exactValue
+		}
+
+		return values.values().next().value
 	}
 
 	private getDisplayParam(screenId: string): ScreenDisplayParam | undefined {
 		if (screenId) {
-			const exactMatch = this.displayParamsByScreen.get(screenId)
+			const exactMatch = this.displayParamsByScreen.get(this.resolveScreenId(screenId))
 			if (exactMatch !== undefined) {
 				return exactMatch
 			}
@@ -1048,14 +1128,19 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 			this.updateStatus(InstanceStatus.Ok)
 
+			const screenInfo = screenInfoResult.status === 'fulfilled' ? screenInfoResult.value : undefined
+			const screens = Array.isArray(screenInfo?.screens) ? screenInfo.screens : []
+			const screenChoices = buildScreenChoices(screens)
 			const data = displayParamsResult.status === 'fulfilled' ? displayParamsResult.value : {}
 			const rawList = normalizeDisplayParams(data)
 			const nextDisplayParamsByScreen = new Map<string, ScreenDisplayParam>()
 
 			for (const [index, item] of rawList.entries()) {
-				const rawScreenId = item.screenId ?? item.screenID ?? index + 1
-				nextDisplayParamsByScreen.set(String(rawScreenId), {
-					screenId: rawScreenId,
+				const rawScreenId = String(item.screenId ?? item.screenID ?? index + 1)
+				const canonicalScreenId =
+					screenChoices.find((choice) => choice.id === rawScreenId)?.id || screenChoices[index]?.id || rawScreenId
+				nextDisplayParamsByScreen.set(canonicalScreenId, {
+					screenId: canonicalScreenId,
 					brightness: item.brightness,
 					colorTemperature: item.colorTemperature,
 					gamma: item.gamma,
@@ -1069,13 +1154,11 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 				displayParams?.screenId === undefined
 					? String(this.displayParamsByScreen.keys().next().value || '')
 					: String(displayParams.screenId)
-			const screenInfo = screenInfoResult.status === 'fulfilled' ? screenInfoResult.value : undefined
-			const screens = Array.isArray(screenInfo?.screens) ? screenInfo.screens : []
 			const selectedScreen = findScreen(screens, variableScreenId)
 			const displayState = displayStateResult.status === 'fulfilled' ? displayStateResult.value : undefined
 			const presetInfo = presetInfoResult.status === 'fulfilled' ? presetInfoResult.value : undefined
-			const selectedDisplayState = Array.isArray(displayState?.displayState) ? displayState.displayState[0] : undefined
-			const selectedMappingState = Array.isArray(displayState?.mappingState) ? displayState.mappingState[0] : undefined
+			const displayStateRecords = asRecordArray(displayState?.displayState)
+			const mappingStateRecords = asRecordArray(displayState?.mappingState)
 			const deviceInfo = deviceInfoResult.status === 'fulfilled' ? deviceInfoResult.value : undefined
 			const monitorInfo = monitorInfoResult.status === 'fulfilled' ? monitorInfoResult.value : undefined
 			const cabinetInfo =
@@ -1096,24 +1179,66 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.namedInputs = findNamedInputs(inputSources)
 			const firstFan = asRecordArray(monitorInfo?.fanInfos)[0]
 			this.deviceHardwareVersion = getString(deviceInfo, 'hwVersion')
-			this.displayMode = getNumber(selectedDisplayState, 'displayMode')
-			this.mappingEnabled = getBoolean(selectedMappingState, 'enable')
+			this.displayModeByScreen = new Map()
+			this.mappingEnabledByScreen = new Map()
+			this.layerSourcesByScreen = new Map()
+			for (const [screenIndex, screen] of screens.entries()) {
+				const screenId = getString(screen, 'screenID') || String(screenIndex + 1)
+				const screenDisplayStates = findStateRecordsForScreen(displayStateRecords, screen, screenIndex, screens.length)
+				const screenDisplayMode = getFirstNumber(screenDisplayStates[0], ['displayMode', 'display_mode', 'mode'])
+				if (screenDisplayMode !== undefined) {
+					this.displayModeByScreen.set(screenId, screenDisplayMode)
+				}
+
+				const screenMappingStates = findStateRecordsForScreen(mappingStateRecords, screen, screenIndex, screens.length)
+				if (screenMappingStates.length > 0) {
+					this.mappingEnabledByScreen.set(
+						screenId,
+						screenMappingStates.every((state) => getFirstBoolean(state, ['enable', 'enabled']) === true),
+					)
+				}
+
+				this.layerSourcesByScreen.set(
+					screenId,
+					new Map(
+						getLayerRecords(screen)
+							.map((layer) => {
+								const layerId = findLayerId(layer)
+								const sourceId = findLayerSource(layer)
+								return layerId && sourceId ? ([layerId, sourceId] as const) : undefined
+							})
+							.filter((entry): entry is readonly [string, string] => entry !== undefined),
+					),
+				)
+			}
+			this.displayMode = this.getDisplayMode(variableScreenId)
+			this.mappingEnabled = this.getMappingEnabled(variableScreenId)
 			this.screenWorkingMode = getNumber(selectedScreen, 'workingMode')
-			this.layerSourcesByLayer = new Map(
-				selectedLayers
-					.map((layer) => {
-						const layerId = findLayerId(layer)
-						const sourceId = findLayerSource(layer)
-						return layerId && sourceId ? ([layerId, sourceId] as const) : undefined
-					})
-					.filter((entry): entry is readonly [string, string] => entry !== undefined),
-			)
 			this.updateActionChoices(
+				screenChoices,
 				buildLayerChoices(selectedLayers, this.screenWorkingMode),
 				buildInputGroupChoices(inputSources),
 				buildCanvasChoices(selectedScreen, displayState),
 			)
-			this.activePresetByScreen = buildActivePresetMap(presetInfo)
+			this.activePresetByScreen = buildActivePresetMap(presetInfo, screenChoices)
+			const perScreenVariableValues: Partial<VariablesSchema> = {}
+			for (const [screenIndex, screen] of screens.entries()) {
+				const screenNumber = screenIndex + 1
+				const prefix = `screen_${screenNumber}` as const
+				const screenId = getString(screen, 'screenID') || String(screenNumber)
+				const screenDisplayParams = this.getDisplayParam(screenId)
+				const screenDisplayMode = this.getDisplayMode(screenId)
+				perScreenVariableValues[`${prefix}_id`] = screenId
+				perScreenVariableValues[`${prefix}_name`] = getString(screen, 'screenName') || `Screen ${screenNumber}`
+				perScreenVariableValues[`${prefix}_brightness`] = screenDisplayParams?.brightness
+				perScreenVariableValues[`${prefix}_gamma`] = screenDisplayParams?.gamma
+				perScreenVariableValues[`${prefix}_color_temperature`] = screenDisplayParams?.colorTemperature
+				perScreenVariableValues[`${prefix}_display_mode`] = screenDisplayMode
+				perScreenVariableValues[`${prefix}_is_blackout`] = screenDisplayMode === 1
+				perScreenVariableValues[`${prefix}_is_freeze`] = screenDisplayMode === 2
+				perScreenVariableValues[`${prefix}_mapping_enabled`] = this.getMappingEnabled(screenId)
+				perScreenVariableValues[`${prefix}_working_mode`] = getNumber(screen, 'workingMode')
+			}
 
 			this.setVariableValues({
 				brightness: displayParams?.brightness,
@@ -1181,6 +1306,10 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 					.map((screen) => getString(screen, 'screenName'))
 					.filter(Boolean)
 					.join(','),
+				all_screen_ids: screens
+					.map((screen) => getString(screen, 'screenID'))
+					.filter(Boolean)
+					.join(','),
 				all_input_group_ids: joinIdList(inputSources, findInputGroupId),
 				all_input_groups: joinIdNameList(inputSources, findInputGroupId, findInputSourceName),
 				...findNamedInputVariables(inputSources),
@@ -1192,6 +1321,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 				device_info_json: stringifyJson(deviceInfo),
 				input_sources_json: stringifyJson(inputSourceInfo),
 				input_status_json: stringifyJson(inputStatusRecords),
+				...perScreenVariableValues,
 			})
 			this.checkFeedbacks(
 				'brightness_matches',
@@ -1245,6 +1375,6 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	updateVariableDefinitions(): void {
-		UpdateVariableDefinitions(this)
+		UpdateVariableDefinitions(this, this.screenChoices)
 	}
 }
